@@ -8,7 +8,7 @@
 #include "stack.h"
 
 char *runLs2(char *path, char *match, int depth) {
-    printf("discovered: %s\n", path);
+    //printf("discovered: %s\n", path);
     struct stat buf;
     DIR *dir = opendir(path);
     if (dir == NULL) {
@@ -16,7 +16,6 @@ char *runLs2(char *path, char *match, int depth) {
     }
     struct dirent *entry;
     char *treeStr = (char*) calloc(1,1);
-    int childMatch = FALSE;
     while ((entry = readdir(dir)) != NULL) {
         // don't recurse on this directory of the last directory:
         if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
@@ -30,38 +29,64 @@ char *runLs2(char *path, char *match, int depth) {
         int isDir =  S_ISDIR(buf.st_mode);
         //printf("entry name: %s\nmode: %d\nsize: %ld\n", entry->d_name, isDir, buf.st_size);
         if (isDir) {
-            char *childStr = runLs2(newPath, match, 1);
-            if (*childStr != '\0') {
-                childMatch = TRUE;
-              //  treeStr = catWithIndents(treeStr, childStr, depth);
+            char *childStr = runLs2(newPath, match, depth + 1);
+            // if our child string isn't empty (there was a match that our child string found):
+            if (!match || *childStr) {
+                suffixToTree(&treeStr, childStr, depth);
             }
+            free(childStr);
         }
-        else if (!strcmp(entry->d_name, match)) {
-          //  treeStr = catWithIndents(treeStr, entry->d_name, depth + 1);
+        // if it's a file and the name matches, add it to the string:
+        else if (!match || !strcmp(entry->d_name, match)) {
+            char prefix[strlen(entry->d_name) + 40];
+            sprintf(prefix, "%s (%d bytes)", entry->d_name, (int)buf.st_size);
+            prefixToTree(&treeStr, prefix, depth + 1);
         }
+        free(newPath);
     }
+   // printf("line 45 with: %s\n", path);
     char *token = strtok(path, "/");
     char *last;
     while (token) {
         last = token;
         token = strtok(NULL, "/");
     }
-    childMatch |= strcmp(last, match);
    // printf("last: %s\n", last);
-    if (childMatch) {
-        treeStr = catWithIndents(last, treeStr, depth);
+    if (!match || *treeStr) {
+        //printf("added %s to tree which is weird because my treeStr is %d\n", last, *treeStr);
+        char prefix[strlen(last) + 13];
+        sprintf(prefix, "%s (directory)", last);
+      //  prefixToTree(&treeStr, prefix, depth);
+        char *temp = catWithIndents(prefix, treeStr, depth);
+        free(treeStr);
+        treeStr = temp;
     }
-    printf("%s\n", treeStr);
-   return treeStr;
+  //  printf("tree: %s\n", treeStr);
+    closedir(dir);
+    return treeStr;
+}
+
+void prefixToTree(char **tree, char *prefix, int depth) {
+    char *temp = catWithIndents(prefix, *tree, depth);
+    free(*tree);
+    *tree = temp;
+}
+void suffixToTree(char **tree, char *prefix, int depth) {
+    char *temp = catWithIndents(*tree, prefix, depth);
+    free(*tree);
+    *tree = temp;
 }
 
 
 char *catWithIndents(char *str1, char *str2, int indents) {
-    char *newStr = (char*) calloc(strlen(INDENT) * indents + strlen(str1) + strlen(str2) + 2, sizeof(char));
+    char *newStr = (char*) malloc(strlen(INDENT)*indents + strlen(str1) + strlen(str2) + 2);
+    newStr[0] = '\0';
     for (int i = 0; i < indents; i++) {
         strcat(newStr, INDENT);
     }
-    sprintf(newStr + (indents * strlen(INDENT)),"%s%s\n", str1, str2);
+    //char *format = *str1 && *str2 ? "%s\n%s" : "%s%s";
+    char *format = "%s\n%s";
+    sprintf(newStr + (indents * strlen(INDENT)),format, str1, str2);
     return newStr;
 }
 

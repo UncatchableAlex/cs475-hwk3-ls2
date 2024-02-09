@@ -11,4 +11,6 @@
 
 char *runLs2(char*, char*, int);
 char *catWithIndents(char*, char*, int);
+void suffixToTree(char**, char*, int);
+void prefixToTree(char**, char*, int);
 #endif
