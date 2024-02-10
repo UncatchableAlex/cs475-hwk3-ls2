@@ -5,17 +5,25 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "ls2.h"
-#include "stack.h"
 
+/**
+ * Take a path, a string to match to (NULL if matching is disabled), and an internal
+ * depth parameter. Return a string representation of the file tree rooted at "path" including 
+ * all subdirectories recursively containing any file that matches. 
+*/
 char *runLs2(char *path, char *match, int depth) {
-    //printf("discovered: %s\n", path);
     struct stat buf;
+    // open the directory on this path:
     DIR *dir = opendir(path);
-    if (dir == NULL) {
-        return "";
-    }
     struct dirent *entry;
+    // if we can't open the directory for whatever reason, we return NULL
+    // Maybe the user gave the path to a file?
+    if (dir == NULL) {
+        return NULL;
+    }
+    // this is the stringified tree that we will use as our data structure.
     char *treeStr = (char*) calloc(1,1);
+    // read the next subentry within this directory until there are no more entries left to read
     while ((entry = readdir(dir)) != NULL) {
         // don't recurse on this directory of the last directory:
         if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
@@ -26,77 +34,60 @@ char *runLs2(char *path, char *match, int depth) {
         sprintf(newPath, "%s/%s", path, entry->d_name);
         // get the entry's stats:
         lstat(newPath, &buf);
+        // is the entry a directory? is it a normal file?
         int isDir =  S_ISDIR(buf.st_mode);
-        //printf("entry name: %s\nmode: %d\nsize: %ld\n", entry->d_name, isDir, buf.st_size);
+        int isNormalFile = S_ISREG(buf.st_mode);
         if (isDir) {
+            // the current entry is a directory. Recurse! 
             char *childStr = runLs2(newPath, match, depth + 1);
-            // if our child string isn't empty (there was a match that our child string found):
+            // if the value from our recursion isn't empty then there was a match that we found
+            // (if we were looking for matches):
             if (!match || *childStr) {
-                suffixToTree(&treeStr, childStr, depth);
+                // prefix the subtree associated with the current entry to our tree
+                prefixToTree(&treeStr, childStr, 0);
             }
             free(childStr);
         }
-        // if it's a file and the name matches, add it to the string:
-        else if (!match || !strcmp(entry->d_name, match)) {
+        // if it's a file and the name matches, add it to our tree string:
+        else if (isNormalFile && (!match || !strcmp(entry->d_name, match))) {
+            // allocate enough space to fit the number for how many bytes the file has (maybe a lot?)
             char prefix[strlen(entry->d_name) + 40];
             sprintf(prefix, "%s (%d bytes)", entry->d_name, (int)buf.st_size);
-            prefixToTree(&treeStr, prefix, depth + 1);
+            prefixToTree(&treeStr, prefix, depth);
         }
         free(newPath);
     }
-   // printf("line 45 with: %s\n", path);
-    char *token = strtok(path, "/");
-    char *last;
-    while (token) {
-        last = token;
-        token = strtok(NULL, "/");
-    }
-   // printf("last: %s\n", last);
-    if (!match || *treeStr) {
-        //printf("added %s to tree which is weird because my treeStr is %d\n", last, *treeStr);
+    // if we aren't at the top-level directory, and there was a match in one of the
+    // subdirectories (or we weren't even looking for matches)...
+    if (depth && (!match || *treeStr)) {
+        // get this directory's name from the path
+        char *token = strtok(path, "/");
+        char *last;
+        while (token) {
+            last = token;
+            token = strtok(NULL, "/");
+        }
+        // add this directory to the tree:
         char prefix[strlen(last) + 13];
-        sprintf(prefix, "%s (directory)", last);
-      //  prefixToTree(&treeStr, prefix, depth);
-        char *temp = catWithIndents(prefix, treeStr, depth);
-        free(treeStr);
-        treeStr = temp;
+        sprintf(prefix, "%s/ (directory)", last);
+        prefixToTree(&treeStr, prefix, depth - 1);
     }
-  //  printf("tree: %s\n", treeStr);
     closedir(dir);
     return treeStr;
 }
 
-void prefixToTree(char **tree, char *prefix, int depth) {
-    char *temp = catWithIndents(prefix, *tree, depth);
-    free(*tree);
-    *tree = temp;
-}
-void suffixToTree(char **tree, char *prefix, int depth) {
-    char *temp = catWithIndents(*tree, prefix, depth);
-    free(*tree);
-    *tree = temp;
-}
-
-
-char *catWithIndents(char *str1, char *str2, int indents) {
-    char *newStr = (char*) malloc(strlen(INDENT)*indents + strlen(str1) + strlen(str2) + 2);
+/**
+ * Concatenate a prefix with the file tree string input parameter. Add appropriate indentation, 
+ * and add a newline to delimit prefix and tree (if neither are empty).
+ */
+void prefixToTree(char **tree, char *prefix, int indents) {
+    char *newStr = (char*) malloc(strlen(INDENT)*indents + strlen(prefix) + strlen(*tree) + 2);
     newStr[0] = '\0';
     for (int i = 0; i < indents; i++) {
         strcat(newStr, INDENT);
     }
-    //char *format = *str1 && *str2 ? "%s\n%s" : "%s%s";
-    char *format = "%s\n%s";
-    sprintf(newStr + (indents * strlen(INDENT)),format, str1, str2);
-    return newStr;
+    char *format = **tree && *prefix ? "%s\n%s" : "%s%s";
+    sprintf(newStr + (indents * strlen(INDENT)),format, prefix, *tree);
+    free(*tree);
+    *tree = newStr;
 }
-
-
-
-/**
-
-- Test irregular files
-- test weird nesting
-- test weird file names (starting with .)
-- really long directory names
-*/
-
